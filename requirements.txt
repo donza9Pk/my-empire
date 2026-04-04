@@ -3,3 +3,4 @@ web3
 requests
 pandas
 plotly
+openpyxl
