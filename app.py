@@ -1,7 +1,7 @@
 # ============================================================
-# 🐺 THE DONZA WOLF EMPIRE: TURBO COMMAND CENTER v4.5 (MASTER)
-# Features: Auto-Refresh (5m) | 24h P/L | Live Price | BSC 0x38
+# 🐺 THE DONZA WOLF EMPIRE: TURBO COMMAND CENTER v4.5 (FINAL FIXED)
 # Built for: Zia Ahmed (Donza King) 👑
+# Fix: Wallet Mapping | Auto-Refresh (5m) | 24h P/L | BSC 0x38
 # ============================================================
 
 import streamlit as st
@@ -46,10 +46,8 @@ WALLETS = {
     "Binance-Admin": "0x43caebCa05728261D818EDE9a842ecec5Ab46047"
 }
 
-# --- 3. AUTO-REFRESH LOGIC (ST-STATEDE) ---
+# --- 3. AUTO-REFRESH SLIDER ---
 refresh_rate = st.sidebar.slider("Auto-Refresh Speed (Seconds)", 60, 600, 300)
-# Yeh line automatically page ko refresh karti hai
-st.empty() 
 
 # --- 4. DATA ENGINES ---
 def get_live_data(token_address):
@@ -64,6 +62,7 @@ def get_live_data(token_address):
     return 0.0, 0.0
 
 def scan_wallet_turbo(name, address):
+    """Sahi mapping ke saath data scan karta hai"""
     try:
         bal_url = f"https://moralis.io{address}/erc20?chain={CHAIN_ID}"
         headers = {"accept": "application/json", "X-API-Key": MORALIS_API_KEY}
@@ -85,24 +84,26 @@ def scan_wallet_turbo(name, address):
                 
                 wallet_assets.append({
                     "Symbol": t.get('symbol'),
-                    "Qty": f"{qty:,.2f}",
+                    "Qty": round(qty, 4),
                     "Price": f"${price:,.4f}",
                     "Value": f"${value:,.2f}",
                     "24h%": f"{change:+.2f}%"
                 })
         return {"name": name, "address": address, "assets": wallet_assets, "total": total_usd, "pnl": total_pnl}
-    except: return {"name": name, "address": address, "assets": [], "total": 0.0, "pnl": 0.0}
+    except Exception as e:
+        return {"name": name, "address": address, "assets": [], "total": 0.0, "pnl": 0.0}
 
 # --- 5. UI DISPLAY ---
 st.title("🐺 THE DONZA WOLF EMPIRE v4.5")
-st.markdown(f"<p class='refresh-text'>Auto-Sync Active: Refreshing every {refresh_rate}s | Last Sync: {datetime.now().strftime('%H:%M:%S')}</p>", unsafe_allow_html=True)
+st.markdown(f"<p class='refresh-text'>Auto-Sync Active | Last Sync: {datetime.now().strftime('%H:%M:%S')}</p>", unsafe_allow_html=True)
 
-# Main Scan Execution
-with st.spinner("🔄 Syncing Empire Vaults via Moralis Turbo Engine..."):
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        results = list(executor.map(lambda x: scan_wallet_turbo(x, x), WALLETS.items()))
+# Scan Execution (Corrected Tuple Unpacking)
+with st.spinner("🔄 Syncing Empire Vaults via Moralis..."):
+    results = []
+    for name, addr in WALLETS.items():
+        results.append(scan_wallet_turbo(name, addr))
 
-# Summary Row
+# Summary Metrics
 grand_total = sum(r['total'] for r in results)
 grand_pnl = sum(r['pnl'] for r in results)
 
@@ -120,7 +121,7 @@ for i, res in enumerate(results):
         st.markdown(f"""
         <div class="wallet-box">
             <h3 style="color:#FFD700; margin-bottom:0;">{res['name']}</h3>
-            <code style="font-size:9px; color:#555;">{res['address']}</code>
+            <code style="font-size:10px; color:#555;">{res['address']}</code>
             <div class="net-worth">${res['total']:,.2f}</div>
             <div style="color:{pnl_color}; font-size:13px; margin-top:5px;">
                 24h: {'+' if res['pnl'] >= 0 else ''}{res['pnl']:,.2f} USD
@@ -129,9 +130,8 @@ for i, res in enumerate(results):
         """, unsafe_allow_html=True)
         if res['assets']:
             with st.expander("Inventory Details"):
-                st.table(res['assets'])
+                st.dataframe(pd.DataFrame(res['assets']), use_container_width=True)
 
-# --- 6. AUTO-REFRESH SCRIPT ---
-# This part triggers the browser to reload
+# --- 6. REFRESH TIMER ---
 time.sleep(refresh_rate)
 st.rerun()
