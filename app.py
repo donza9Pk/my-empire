@@ -1,7 +1,7 @@
 # ============================================================
-# 🐺 THE DONZA WOLF EMPIRE: TURBO COMMAND CENTER v4.5 (FINAL FIXED)
-# Built for: Zia Ahmed (Donza King) 👑
-# Fix: Wallet Mapping | Auto-Refresh (5m) | 24h P/L | BSC 0x38
+# 🐺 THE DONZA WOLF EMPIRE: ULTIMATE COMMAND CENTER v5.5
+# Combined APIs: Wallet + ERC20 + Price + History (Moralis)
+# Network: BSC (0x38) | Built for: Zia Ahmed (Donza King) 👑
 # ============================================================
 
 import streamlit as st
@@ -11,8 +11,8 @@ import time
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 
-# --- 1. CONFIG & EMPIRE THEME ---
-st.set_page_config(page_title="Donza Wolf v4.5 | Turbo", layout="wide", page_icon="🐺")
+# --- 1. CONFIG & THEME ---
+st.set_page_config(page_title="Donza Wolf v5.5 | History", layout="wide", page_icon="🐺")
 
 st.markdown("""
     <style>
@@ -21,18 +21,18 @@ st.markdown("""
         border: 2px solid #FFD700;
         border-radius: 15px;
         padding: 20px;
-        background: linear-gradient(145deg, #111, #080808);
+        background: linear-gradient(145deg, #151515, #050505);
         margin-bottom: 20px;
-        box-shadow: 0px 4px 15px rgba(255, 215, 0, 0.3);
+        box-shadow: 0px 6px 20px rgba(255, 215, 0, 0.2);
     }
-    .net-worth { font-size: 28px; font-weight: bold; color: #00ff00; margin-top: 5px; }
-    .refresh-text { color: #888; font-size: 12px; font-style: italic; }
+    .net-worth { font-size: 28px; font-weight: bold; color: #00ff00; }
+    .history-text { color: #888; font-size: 11px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. API & NETWORK CONFIG ---
+# --- 2. API CONFIG ---
 MORALIS_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJub25jZSI6IjRiOGQ2MTA3LWVhMzgtNDYwNi05NjMzLWRiMzJjZGVjNTY3ZCIsIm9yZ0lkIjoiNjExOTAiLCJ1c2VySWQiOiI2MDgzOCIsInR5cGVJZCI6ImU3Nzc4Njg5LTk5OWQtNGExYS1iNDNmLTA3MjMxZjY0OWI0NCIsInR5cGUiOiJQUk9KRUNUIiwiaWF0IjoxNzIyMjIzMjAxLCJleHAiOjQ4Nzc5ODMyMDF9.W8zYot0-qm-bx5TCzjn55iFgdkAYPNdeeOamC-8UXt4"
-CHAIN_ID = "0x38"  # BNB Smart Chain
+CHAIN_ID = "0x38" 
 
 WALLETS = {
     "Alpha Vault": "0x0eC7f1D93d2A39f695587cA1123482FC3e867e45",
@@ -46,92 +46,75 @@ WALLETS = {
     "Binance-Admin": "0x43caebCa05728261D818EDE9a842ecec5Ab46047"
 }
 
-# --- 3. AUTO-REFRESH SLIDER ---
-refresh_rate = st.sidebar.slider("Auto-Refresh Speed (Seconds)", 60, 600, 300)
-
-# --- 4. DATA ENGINES ---
-def get_live_data(token_address):
+# --- 3. THE MASTER DATA ENGINE ---
+def scan_wallet_ultimate(name, address):
+    headers = {"X-API-Key": MORALIS_API_KEY, "accept": "application/json"}
+    data = {"name": name, "address": address, "assets": [], "total_usd": 0.0, "history": []}
+    
     try:
-        url = f"https://moralis.io{token_address}/price?chain={CHAIN_ID}"
-        headers = {"accept": "application/json", "X-API-Key": MORALIS_API_KEY}
-        res = requests.get(url, headers=headers, timeout=10)
-        if res.status_code == 200:
-            data = res.json()
-            return float(data.get('usdPrice', 0)), float(data.get('24h_percent_change', 0))
-    except: pass
-    return 0.0, 0.0
-
-def scan_wallet_turbo(name, address):
-    """Sahi mapping ke saath data scan karta hai"""
-    try:
-        bal_url = f"https://moralis.io{address}/erc20?chain={CHAIN_ID}"
-        headers = {"accept": "application/json", "X-API-Key": MORALIS_API_KEY}
-        res = requests.get(bal_url, headers=headers, timeout=15)
-        tokens = res.json() if res.status_code == 200 else []
+        # A. GET BALANCES (Native + ERC20)
+        bal_url = f"https://moralis.io{address}/tokens?chain={CHAIN_ID}&exclude_spam=true"
+        bal_res = requests.get(bal_url, headers=headers, timeout=12).json()
         
-        wallet_assets = []
-        total_usd = 0.0
-        total_pnl = 0.0
-
+        tokens = bal_res.get('result', [])
         for t in tokens:
-            qty = float(t.get('balance', 0)) / (10**int(t.get('decimals', 18)))
-            if qty > 0.001:
-                price, change = get_live_data(t['token_address'])
-                value = qty * price
-                total_usd += value
-                pnl = (value * change / 100) if change else 0.0
-                total_pnl += pnl
-                
-                wallet_assets.append({
-                    "Symbol": t.get('symbol'),
-                    "Qty": round(qty, 4),
-                    "Price": f"${price:,.4f}",
-                    "Value": f"${value:,.2f}",
-                    "24h%": f"{change:+.2f}%"
+            val = float(t.get('usd_value') or 0)
+            data['total_usd'] += val
+            if val > 0.1:
+                data['assets'].append({
+                    "Token": t.get('symbol'),
+                    "Qty": round(float(t.get('balance_formatted', 0)), 2),
+                    "Value": f"${val:,.2f}"
                 })
-        return {"name": name, "address": address, "assets": wallet_assets, "total": total_usd, "pnl": total_pnl}
-    except Exception as e:
-        return {"name": name, "address": address, "assets": [], "total": 0.0, "pnl": 0.0}
 
-# --- 5. UI DISPLAY ---
-st.title("🐺 THE DONZA WOLF EMPIRE v4.5")
-st.markdown(f"<p class='refresh-text'>Auto-Sync Active | Last Sync: {datetime.now().strftime('%H:%M:%S')}</p>", unsafe_allow_html=True)
+        # B. GET TRANSACTION HISTORY (Last 5 TXs)
+        hist_url = f"https://moralis.io{address}/history?chain={CHAIN_ID}&order=DESC&limit=5"
+        hist_res = requests.get(hist_url, headers=headers, timeout=12).json()
+        
+        for tx in hist_res.get('result', []):
+            tx_date = datetime.fromisoformat(tx['block_timestamp'].replace('Z', '')).strftime('%d-%m %H:%M')
+            status = "✅ Confirmed" if tx['confirmed'] else "⏳ Pending"
+            data['history'].append({
+                "Date": tx_date,
+                "Value (BNB)": f"{float(tx['value'])/10**18:.4f}",
+                "Status": status
+            })
 
-# Scan Execution (Corrected Tuple Unpacking)
-with st.spinner("🔄 Syncing Empire Vaults via Moralis..."):
-    results = []
-    for name, addr in WALLETS.items():
-        results.append(scan_wallet_turbo(name, addr))
+        return data
+    except:
+        return data
 
-# Summary Metrics
-grand_total = sum(r['total'] for r in results)
-grand_pnl = sum(r['pnl'] for r in results)
+# --- 4. UI DISPLAY ---
+st.title("🐺 THE DONZA WOLF EMPIRE v5.5")
+st.sidebar.info(f"🔄 Auto-Refresh Active | Network: BSC")
+refresh_rate = st.sidebar.slider("Refresh Speed", 60, 600, 300)
 
-c1, c2 = st.columns(2)
-c1.metric("TOTAL NET WORTH", f"${grand_total:,.2f}")
-c2.metric("EMPIRE 24h P/L", f"${grand_pnl:,.2f}", delta=f"{grand_pnl:,.2f}")
+if st.button("🚀 EXECUTE GLOBAL DEEP SCAN"):
+    with st.spinner("Analyzing Blockchain History & Inventory..."):
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            results = list(executor.map(lambda x: scan_wallet_ultimate(x, WALLETS[x]), WALLETS.keys()))
+        
+        grand_total = sum(r['total_usd'] for r in results)
+        st.metric("EMPIRE NET WORTH (USD)", f"${grand_total:,.2f}")
+        
+        cols = st.columns(3)
+        for i, res in enumerate(results):
+            with cols[i % 3]:
+                st.markdown(f"""
+                <div class="wallet-box">
+                    <h3 style="color:#FFD700; margin-bottom:0;">{res['name']}</h3>
+                    <code style="font-size:9px; color:#555;">{res['address'][:18]}...</code>
+                    <div class="net-worth">${res['total_usd']:,.2f}</div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                with st.expander("Inventory & History"):
+                    st.write("**Recent Assets:**")
+                    st.table(res['assets']) if res['assets'] else st.write("No major tokens.")
+                    
+                    st.write("**Last 5 Transactions:**")
+                    st.table(res['history']) if res['history'] else st.write("No recent TXs.")
 
-st.divider()
-
-# 9-GRID VAULTS
-cols = st.columns(3)
-for i, res in enumerate(results):
-    with cols[i % 3]:
-        pnl_color = "#00ff00" if res['pnl'] >= 0 else "#ff4b4b"
-        st.markdown(f"""
-        <div class="wallet-box">
-            <h3 style="color:#FFD700; margin-bottom:0;">{res['name']}</h3>
-            <code style="font-size:10px; color:#555;">{res['address']}</code>
-            <div class="net-worth">${res['total']:,.2f}</div>
-            <div style="color:{pnl_color}; font-size:13px; margin-top:5px;">
-                24h: {'+' if res['pnl'] >= 0 else ''}{res['pnl']:,.2f} USD
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        if res['assets']:
-            with st.expander("Inventory Details"):
-                st.dataframe(pd.DataFrame(res['assets']), use_container_width=True)
-
-# --- 6. REFRESH TIMER ---
+# --- 5. REFRESH ---
 time.sleep(refresh_rate)
 st.rerun()
