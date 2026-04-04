@@ -1,12 +1,13 @@
 import streamlit as st
 import requests
+import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
 
 # --- 1. CONFIG ---
 st.set_page_config(page_title="Donza Wolf v5.6 | Zero Filter", layout="wide")
 
-# Note: Keep your API Key private! 
-MORALIS_API_KEY = "YOUR_API_KEY_HERE"
+# Replace with your actual Moralis API Key
+MORALIS_API_KEY = "YOUR_API_KEY_HERE" 
 CHAIN_ID = "0x38" # BSC Mainnet
 
 WALLETS = {
@@ -23,19 +24,22 @@ WALLETS = {
 
 def scan_wallet_no_filter(name, address):
     headers = {"X-API-Key": MORALIS_API_KEY, "accept": "application/json"}
-    data = {"name": name, "address": address, "assets": [], "total_usd": 0.0, "history": []}
+    data = {"name": name, "address": address, "assets": [], "total_usd": 0.0, "history": [], "error": None}
     
     try:
-        # A. GET ALL TOKENS (The correct API URL)
+        # A. GET TOKENS - Using Correct API Gateway
         bal_url = f"https://moralis.io{address}/tokens?chain={CHAIN_ID}"
-        bal_res = requests.get(bal_url, headers=headers, timeout=15).json()
+        response = requests.get(bal_url, headers=headers, timeout=15)
         
-        # Moralis returns a list directly or in 'result' depending on version
-        tokens = bal_res.get('result', bal_res) if isinstance(bal_res, dict) else bal_res
+        if response.status_code != 200:
+            data['error'] = f"API Error {response.status_code}: {response.text[:100]}"
+            return data
+
+        bal_res = response.json()
+        tokens = bal_res.get('result', [])
         
         for t in tokens:
-            # Moralis uses balance_formatted and usd_value in their Web3 API
-            qty = float(t.get('balance_formatted', 0))
+            qty = float(t.get('balance_formatted') or 0)
             usd_val = float(t.get('usd_value') or 0)
             
             if qty > 0:
@@ -56,9 +60,10 @@ def scan_wallet_no_filter(name, address):
                 "Value": f"{float(tx['value'])/10**18:.4f} BNB",
                 "To": f"{tx['to_address'][:10]}..."
             })
+            
         return data
     except Exception as e:
-        print(f"Error scanning {name}: {e}")
+        data['error'] = str(e)
         return data
 
 # --- UI ---
@@ -66,18 +71,33 @@ st.title("🐺 THE DONZA WOLF v5.6")
 
 if st.button("🚀 DEEP SCAN (NO FILTER)"):
     with ThreadPoolExecutor(max_workers=5) as executor:
-        # Mapping needs to pass both name and address
         results = list(executor.map(lambda x: scan_wallet_no_filter(x, WALLETS[x]), WALLETS.keys()))
     
     grand_total = sum(r['total_usd'] for r in results)
     st.metric("TOTAL EMPIRE NET WORTH", f"${grand_total:,.2f}")
     
+    # Track errors for the debug console
+    errors_found = []
+
     for res in results:
+        if res['error']:
+            errors_found.append(f"**{res['name']}**: {res['error']}")
+            
         with st.expander(f"📊 {res['name']} - Total: ${res['total_usd']:,.2f}"):
-            st.write("**All Assets (Including Dust):**")
-            if res['assets']: st.table(res['assets'])
-            else: st.warning("No tokens found.")
+            if res['assets']: 
+                st.table(res['assets'])
+            else: 
+                st.warning("No tokens found (or API limit reached).")
             
             st.write("**Last 5 Transactions:**")
-            if res['history']: st.table(res['history'])
-            else: st.info("No recent history.")
+            if res['history']: 
+                st.table(res['history'])
+            else: 
+                st.info("No recent history found.")
+
+    # --- DEBUG CONSOLE ---
+    if errors_found:
+        st.divider()
+        st.error("### 🛠 DEBUG CONSOLE (Errors Detected)")
+        for err in errors_found:
+            st.write(err)
